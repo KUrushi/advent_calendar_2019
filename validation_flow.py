@@ -1,6 +1,6 @@
 import tensorflow_data_validation as tfdv
 
-from tempfile import mkdtemp, NamedTemporaryFile
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 from google.cloud import bigquery, bigquery_storage_v1beta1
