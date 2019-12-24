@@ -4,7 +4,7 @@ SELECT
     [ifnull(EXTRACT(MONTH FROM trip_start_timestamp),0)] AS trip_start_month,
     [ifnull(EXTRACT(DAY FROM trip_start_timestamp), 0)] AS trip_start_hour,
     [ifnull(EXTRACT(DAY FROM trip_start_timestamp), 0)] AS trip_start_day,
-    [trip_start_timestamp] AS trip_start_timestamp,
+    [format_timestamp('%F', trip_start_timestamp)] AS trip_start_timestamp,
     [ifnull(pickup_latitude,0)] AS pickup_latitude,
     [ifnull(pickup_longitude,0)] AS pickup_longitude,
     [ifnull(dropoff_latitude, 0)] AS dropoff_latitude,
