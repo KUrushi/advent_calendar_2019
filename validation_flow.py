@@ -4,28 +4,10 @@ from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 from google.cloud import bigquery, bigquery_storage_v1beta1
-from metaflow import FlowSpec, step, Parameter, current
+from metaflow import FlowSpec, step, Parameter, current, IncludeFile
 import pyarrow as pa
 from tensorflow_data_validation.statistics import stats_impl
 from tensorflow_data_validation.utils import stats_util
-
-QUERY = """
-SELECT 
-  [ifnull(pickup_community_area,0)] AS pickup_community_area
-  ,[ifnull(dropoff_community_area,0)] AS dropoff_community_area
-  ,[ifnull(fare,0)] AS fare
-  ,[ifnull(tips,0)] AS tips
-  ,[ifnull(tolls,0)] AS tolls
-  ,[ifnull(extras,0)] AS extras
-  ,[ifnull(trip_total,0)] AS trip_total
-  ,[ifnull(pickup_latitude,0)] AS pickup_latitude
-  ,[ifnull(pickup_longitude,0)] AS pickup_longitude
-  ,[ifnull(dropoff_latitude, 0)] AS dropoff_latitude
-  ,[ifnull(dropoff_longitude,0)] AS dropoff_longitud
-FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
-WHERE {expression}
-
-"""
 
 
 class ValidationFlow(FlowSpec):
@@ -41,6 +23,12 @@ class ValidationFlow(FlowSpec):
         default=Path('./artifact')
     )
 
+    training_data = IncludeFile('TRAINING_DATA_PATH',
+                                     default=Path('./sql/training_example.sql'))
+
+    validate_data = IncludeFile('VALIDATE_DATA_PATH',
+                                     default=Path('./sql/validate_example.sql'))
+
     @step
     def start(self):
         if not self.ARTIFACT_PATH.exists():
@@ -54,7 +42,7 @@ class ValidationFlow(FlowSpec):
     def get_example(self):
         bqclient = bigquery.Client(project=self.PROJECT_ID)
         bqstorage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
-        result = bqclient.query(QUERY.format(expression='MOD(ABS(FARM_FINGERPRINT(unique_key)), 100) = 1'))
+        result = bqclient.query(self.training_data)
         self.data = result.to_arrow(bqstorage_client=bqstorage_client)
         print(Path(self.save_dir))
         with NamedTemporaryFile(dir=self.save_dir) as f:
@@ -68,7 +56,7 @@ class ValidationFlow(FlowSpec):
     def get_validate(self):
         bqclient = bigquery.Client(project=self.PROJECT_ID)
         bqstorage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
-        result = bqclient.query(QUERY.format(expression='MOD(ABS(FARM_FINGERPRINT(unique_key)), 100) = 5'))
+        result = bqclient.query(self.validate_data)
         self.data = result.to_arrow(bqstorage_client=bqstorage_client)
 
         with NamedTemporaryFile(dir=self.save_dir) as f:
