@@ -44,7 +44,6 @@ class ValidationFlow(FlowSpec):
         bqstorage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
         result = bqclient.query(self.training_data)
         self.data = result.to_arrow(bqstorage_client=bqstorage_client)
-        print(Path(self.save_dir))
         with NamedTemporaryFile(dir=self.save_dir) as f:
             writer = pa.RecordBatchFileWriter((Path(self.save_dir) / Path('training_examples.arrow')).as_posix(),
                                               self.data.schema)
@@ -89,7 +88,6 @@ class ValidationFlow(FlowSpec):
     def valid_anomalies(self, inputs):
         self.anomalies = tfdv.validate_statistics(statistics=inputs.generate_validate_stats.stats,
                                                   schema=inputs.infer_schema.schema)
-        print((Path(inputs.infer_schema.save_dir) / Path('anomalies.pbtxt')).as_posix())
         tfdv.write_anomalies_text(self.anomalies,
                                   (Path(inputs.infer_schema.save_dir) / Path('anomalies.pbtxt')).as_posix())
         self.next(self.end)
