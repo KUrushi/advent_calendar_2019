@@ -1,8 +1,8 @@
 import tensorflow_data_validation as tfdv
 
-from tempfile import NamedTemporaryFile
 from pathlib import Path
 
+from tfx_bsl.arrow import table_util
 from google.cloud import bigquery, bigquery_storage_v1beta1
 from metaflow import FlowSpec, step, Parameter, current, IncludeFile
 import pyarrow as pa
@@ -23,10 +23,10 @@ class ValidationFlow(FlowSpec):
         default=Path('./artifact')
     )
 
-    training_data = IncludeFile('TRAINING_DATA_PATH',
+    training_query = IncludeFile('TRAINING_DATA_PATH',
                                      default=Path('./sql/training_example.sql'))
 
-    validate_data = IncludeFile('VALIDATE_DATA_PATH',
+    validate_query = IncludeFile('VALIDATE_DATA_PATH',
                                      default=Path('./sql/validate_example.sql'))
 
     @step
@@ -42,12 +42,11 @@ class ValidationFlow(FlowSpec):
     def get_example(self):
         bqclient = bigquery.Client(project=self.PROJECT_ID)
         bqstorage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
-        result = bqclient.query(self.training_data)
-        self.data = result.to_arrow(bqstorage_client=bqstorage_client)
-        with NamedTemporaryFile(dir=self.save_dir) as f:
-            writer = pa.RecordBatchFileWriter((Path(self.save_dir) / Path('training_examples.arrow')).as_posix(),
-                                              self.data.schema)
-            writer.write_table(self.data)
+        result = bqclient.query(self.training_query)
+        self.train_data = result.to_arrow(bqstorage_client=bqstorage_client)
+        writer = pa.RecordBatchFileWriter((Path(self.save_dir) / Path('training_examples.arrow')).as_posix(),
+                                          self.train_data.schema)
+        writer.write_table(self.train_data)
 
         self.next(self.generate_stats)
 
@@ -55,38 +54,38 @@ class ValidationFlow(FlowSpec):
     def get_validate(self):
         bqclient = bigquery.Client(project=self.PROJECT_ID)
         bqstorage_client = bigquery_storage_v1beta1.BigQueryStorageClient()
-        result = bqclient.query(self.validate_data)
-        self.data = result.to_arrow(bqstorage_client=bqstorage_client)
+        result = bqclient.query(self.validate_query)
+        self.valid_data = result.to_arrow(bqstorage_client=bqstorage_client)
 
-        with NamedTemporaryFile(dir=self.save_dir) as f:
-            writer = pa.RecordBatchFileWriter(
-                (Path(self.save_dir) / Path('validate_examples.arrow')).as_posix(),
-                 self.data.schema)
-            writer.write_table(self.data)
+        writer = pa.RecordBatchFileWriter(
+            (Path(self.save_dir) / Path('validate_examples.arrow')).as_posix(),
+             self.valid_data.schema)
+        writer.write_table(self.valid_data)
         self.next(self.generate_validate_stats)
 
     @step
     def generate_stats(self):
-        self.stats = stats_impl.generate_statistics_in_memory(self.data)
-        stats_util.write_stats_text(self.stats, (Path(self.save_dir) / Path('train_stats.pbtxt')).as_posix())
+        self.train_stats = stats_impl.generate_statistics_in_memory(table_util.MergeTables([self.train_data]))
+        stats_util.write_stats_text(self.train_stats, (Path(self.save_dir) / Path('train_stats.pbtxt')).as_posix())
         self.next(self.infer_schema)
 
     @step
     def generate_validate_stats(self):
-        self.stats = stats_impl.generate_statistics_in_memory(self.data)
-        stats_util.write_stats_text(self.stats, (Path(self.save_dir) / Path('valid_stats.pbtxt')).as_posix())
+        self.valid_stats = stats_impl.generate_statistics_in_memory(table_util.MergeTables([self.valid_data]))
+        stats_util.write_stats_text(self.valid_stats, (Path(self.save_dir) / Path('valid_stats.pbtxt')).as_posix())
         self.next(self.valid_anomalies)
 
     @step
     def infer_schema(self):
-        self.schema = tfdv.infer_schema(self.stats)
+        self.schema = tfdv.infer_schema(self.train_stats)
         tfdv.write_schema_text(self.schema, (Path(self.save_dir) / Path('schema.pbtxt')).as_posix())
         self.save_dir = self.save_dir
         self.next(self.valid_anomalies)
 
     @step
     def valid_anomalies(self, inputs):
-        self.anomalies = tfdv.validate_statistics(statistics=inputs.generate_validate_stats.stats,
+        self.merge_artifacts(inputs)
+        self.anomalies = tfdv.validate_statistics(statistics=inputs.generate_validate_stats.valid_stats,
                                                   schema=inputs.infer_schema.schema)
         tfdv.write_anomalies_text(self.anomalies,
                                   (Path(inputs.infer_schema.save_dir) / Path('anomalies.pbtxt')).as_posix())
