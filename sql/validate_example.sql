@@ -18,4 +18,4 @@ SELECT
     [ifnull(dropoff_community_area, 0)] AS dropoff_community_area,
     [ifnull(tips, 0)] AS tips
 FROM `bigquery-public-data.chicago_taxi_trips.taxi_trips`
-WHERE mod(abs(farm_fingerprint(unique_key)), 10000) between 500 and 600
+WHERE mod(abs(farm_fingerprint(unique_key)), 1000) between 80 and 90
