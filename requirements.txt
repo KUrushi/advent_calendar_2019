@@ -1,5 +1,5 @@
 metaflow
 tfx==0.15.0
-tensorflow==2.0
+tensorflow==2.0.1
 tensorboard==2.0.0
 grpcio==1.24.3
